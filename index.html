@@ -169,7 +169,7 @@
         </div>
         <div class="metro-controls">
           <button class="btn-tap" onclick="tap()">TAP</button>
-          <button class="btn-play" id="play-btn" onclick="toggleMetronome()">▶</button>
+          <button class="btn-play" id="play-btn" onclick="toggleMetronome()"><span id="play-icon">▶</span></button>
         </div>
       </div>
       <input type="range" class="bpm-slider" id="bpm-slider" min="40" max="240" value="80" oninput="setBpm(this.value)">
@@ -397,14 +397,15 @@ let nextNoteTime = 0;
 let schedulerTimer = null;
 let tapTimes = [];
 
-async function scheduler() {
-  const ctx = await getCtx();
+function scheduler() {
+  // audioCtx is guaranteed running by the time setInterval fires (startMetro awaits it first)
+  if (!audioCtx || audioCtx.state !== 'running') return;
   const spb = 60.0 / bpm;
-  while (nextNoteTime < ctx.currentTime + 0.1) {
+  while (nextNoteTime < audioCtx.currentTime + 0.1) {
     playClick(nextNoteTime, currentBeat === 0);
     const beat = currentBeat;
     const t = nextNoteTime;
-    setTimeout(() => updateBeatDots(beat), Math.max(0, (t - ctx.currentTime) * 1000));
+    setTimeout(() => updateBeatDots(beat), Math.max(0, (t - audioCtx.currentTime) * 1000));
     nextNoteTime += spb;
     currentBeat = (currentBeat + 1) % beatsPerBar;
   }
@@ -420,7 +421,7 @@ async function startMetro() {
   currentBeat = 0;
   nextNoteTime = ctx.currentTime + 0.05;
   schedulerTimer = setInterval(scheduler, 25);
-  document.getElementById('play-btn').textContent = '⏹';
+  document.getElementById('play-icon').innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="2" fill="white"/></svg>';
   document.getElementById('play-btn').classList.add('playing');
 }
 
@@ -428,7 +429,7 @@ function stopMetro() {
   isMetroPlaying = false;
   clearInterval(schedulerTimer);
   schedulerTimer = null;
-  document.getElementById('play-btn').textContent = '▶';
+  document.getElementById('play-icon').textContent = '▶';
   document.getElementById('play-btn').classList.remove('playing');
   document.querySelectorAll('.beat-dot').forEach(d => d.classList.remove('active'));
 }
@@ -552,7 +553,7 @@ async function toggleChop() {
   buildChopNotesDisplay(notes);
 
   const noteInterval = (beatsPerBar / NOTE_VALUES[activeNote]) * (60 / bpm);
-  const startTime = ctx.currentTime + 0.05;
+  const startTime = audioCtx.currentTime + 0.05;
   const gen = ++chopGeneration;
 
   chopAudioNodes = [];
@@ -565,7 +566,7 @@ async function toggleChop() {
     const nodes = await playStroke(t, hand);
     if (nodes) chopAudioNodes.push(...nodes);
     // Schedule visual highlight — bail if generation changed (i.e. stopped)
-    const delay = Math.max(0, (t - ctx.currentTime) * 1000);
+    const delay = Math.max(0, (t - audioCtx.currentTime) * 1000);
     const to = setTimeout(() => {
       if (chopGeneration !== gen) return;
       chopNoteEls.forEach(({el}) => el.classList.remove('active-R', 'active-L'));
@@ -583,13 +584,13 @@ async function toggleChop() {
   chopTimeouts.push(endTo);
 }
 
-async function stopChop() {
+function stopChop() {
   isChopPlaying = false;
   chopGeneration++; // invalidate all pending visual callbacks
   chopTimeouts.forEach(t => clearTimeout(t));
   chopTimeouts = [];
   // Stop all scheduled audio nodes immediately
-  const now = (await getCtx()).currentTime;
+  const now = audioCtx ? audioCtx.currentTime : 0;
   chopAudioNodes.forEach(node => {
     try { node.stop(now); } catch(e) {}
   });
