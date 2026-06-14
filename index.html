@@ -280,9 +280,17 @@ let manuallySet = new Set(); // slot indices the user has explicitly locked
 // Audio context
 // ─────────────────────────────────────────────────────────
 let audioCtx = null;
-function getCtx() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+// Returns a Promise that resolves to a running AudioContext.
+// On iOS Safari the context MUST be created and resumed inside a user gesture,
+// and resume() is async — we must await it before scheduling any audio.
+async function getCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended' || audioCtx.state === 'interrupted') {
+    await audioCtx.resume();
+  }
   return audioCtx;
 }
 
@@ -292,8 +300,8 @@ function getCtx() {
 // Right hand: higher-pitched rimshot-style tap
 // Left hand:  lower-pitched, slightly softer tap
 // ─────────────────────────────────────────────────────────
-function playClick(time, isAccent) {
-  const ctx = getCtx();
+async function playClick(time, isAccent) {
+  const ctx = await getCtx();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.connect(gain); gain.connect(ctx.destination);
@@ -305,8 +313,8 @@ function playClick(time, isAccent) {
   osc.start(time); osc.stop(time + 0.05);
 }
 
-function playStroke(time, hand) {
-  const ctx = getCtx();
+async function playStroke(time, hand) {
+  const ctx = await getCtx();
 
   // Both hands are hi-hat sounds built from the same band-passed noise
   // core, but with very different character:
@@ -389,8 +397,8 @@ let nextNoteTime = 0;
 let schedulerTimer = null;
 let tapTimes = [];
 
-function scheduler() {
-  const ctx = getCtx();
+async function scheduler() {
+  const ctx = await getCtx();
   const spb = 60.0 / bpm;
   while (nextNoteTime < ctx.currentTime + 0.1) {
     playClick(nextNoteTime, currentBeat === 0);
@@ -406,8 +414,8 @@ function toggleMetronome() {
   if (isMetroPlaying) stopMetro(); else startMetro();
 }
 
-function startMetro() {
-  const ctx = getCtx();
+async function startMetro() {
+  const ctx = await getCtx();
   isMetroPlaying = true;
   currentBeat = 0;
   nextNoteTime = ctx.currentTime + 0.05;
@@ -431,8 +439,8 @@ function setBpm(val) {
   document.getElementById('bpm-slider').value = bpm;
 }
 
-function tap() {
-  getCtx();
+async function tap() {
+  await getCtx();
   const now = Date.now();
   tapTimes.push(now);
   if (tapTimes.length > 8) tapTimes.shift();
@@ -529,8 +537,8 @@ function buildChopNotesDisplay(notes) {
 
 let chopGeneration = 0; // incremented on each stop to invalidate pending visuals
 
-function toggleChop() {
-  getCtx();
+async function toggleChop() {
+  const ctx = await getCtx(); // await properly — ctx is the actual AudioContext
   if (isChopPlaying) { stopChop(); return; }
 
   const notes = getFullPattern() || getFullPatternFallback();
@@ -539,23 +547,23 @@ function toggleChop() {
   isChopPlaying = true;
   // Always restart metronome from beat 1 so chop lines up with the click
   if (isMetroPlaying) stopMetro();
-  startMetro();
+  await startMetro();
   updateChopBtn();
   buildChopNotesDisplay(notes);
 
-  const ctx = getCtx();
   const noteInterval = (beatsPerBar / NOTE_VALUES[activeNote]) * (60 / bpm);
   const startTime = ctx.currentTime + 0.05;
   const gen = ++chopGeneration;
 
   chopAudioNodes = [];
 
-  notes.forEach((n, i) => {
+  for (let i = 0; i < notes.length; i++) {
+    const n = notes[i];
     const t = startTime + i * noteInterval;
     const hand = n.toUpperCase() === 'R' ? 'R' : 'L';
-    // playStroke now returns nodes so we can stop them
-    const nodes = playStroke(t, hand);
-    chopAudioNodes.push(...nodes);
+    // await each playStroke so nodes are collected before any could fire
+    const nodes = await playStroke(t, hand);
+    if (nodes) chopAudioNodes.push(...nodes);
     // Schedule visual highlight — bail if generation changed (i.e. stopped)
     const delay = Math.max(0, (t - ctx.currentTime) * 1000);
     const to = setTimeout(() => {
@@ -564,7 +572,7 @@ function toggleChop() {
       if (chopNoteEls[i]) chopNoteEls[i].el.classList.add('active-' + hand);
     }, delay);
     chopTimeouts.push(to);
-  });
+  }
 
   // Auto-stop after all notes play
   const totalDuration = notes.length * noteInterval * 1000 + 200;
@@ -575,13 +583,13 @@ function toggleChop() {
   chopTimeouts.push(endTo);
 }
 
-function stopChop() {
+async function stopChop() {
   isChopPlaying = false;
   chopGeneration++; // invalidate all pending visual callbacks
   chopTimeouts.forEach(t => clearTimeout(t));
   chopTimeouts = [];
   // Stop all scheduled audio nodes immediately
-  const now = getCtx().currentTime;
+  const now = (await getCtx()).currentTime;
   chopAudioNodes.forEach(node => {
     try { node.stop(now); } catch(e) {}
   });
