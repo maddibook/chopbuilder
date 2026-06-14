@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chop Builder — Drum Fill Generator</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  :root {
+    --bg: #0e0e10;
+    --surface: #18181c;
+    --surface2: #222228;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #f0eff4;
+    --muted: #8e8d99;
+    --faint: #4a4955;
+    --accent: #b49cff;
+    --accent-bg: rgba(180,156,255,0.12);
+    --accent-dark: #7c5cfc;
+    --green: #6ee7b7;
+    --green-bg: rgba(110,231,183,0.1);
+    --mono: ui-monospace, 'SF Mono', Menlo, Monaco, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+    --r: 10px;
+    --r-lg: 14px;
+  }
+
+  body { font-family: var(--sans); background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 100px; }
+
+  header { padding: 28px 20px 0; max-width: 560px; margin: 0 auto; }
+  .wordmark { font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; color: var(--accent); text-transform: uppercase; margin-bottom: 10px; }
+  h1 { font-size: clamp(28px, 7vw, 42px); font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; margin-bottom: 8px; }
+  .subtitle { font-size: 14px; color: var(--muted); line-height: 1.6; margin-bottom: 28px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px; margin-bottom: 12px; }
+  .section-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; color: var(--faint); text-transform: uppercase; margin-bottom: 12px; }
+  main { max-width: 560px; margin: 0 auto; padding: 0 16px; }
+
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--border2); background: transparent; color: var(--muted); font-family: var(--mono); font-size: 15px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .chip.on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+
+  .seg-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .seg { padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border2); background: transparent; color: var(--muted); font-family: var(--sans); font-size: 13px; cursor: pointer; }
+  .seg.on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); font-weight: 500; }
+
+  .btn-generate { width: 100%; padding: 15px; background: var(--accent-dark); color: #fff; border: none; border-radius: var(--r); font-family: var(--sans); font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 12px; }
+  .btn-generate:active { opacity: 0.85; }
+
+  /* ── Metronome ── */
+  .metro-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .bpm-display { font-family: var(--mono); font-size: 36px; font-weight: 700; line-height: 1; }
+  .bpm-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; color: var(--faint); text-transform: uppercase; margin-top: 2px; }
+  .metro-controls { display: flex; gap: 8px; align-items: center; }
+  .btn-tap { padding: 10px 18px; border-radius: var(--r); border: 1.5px solid var(--border2); background: transparent; color: var(--text); font-family: var(--mono); font-size: 13px; font-weight: 700; cursor: pointer; }
+  .btn-tap:active { background: var(--surface2); }
+  .btn-play { width: 48px; height: 48px; border-radius: 50%; border: none; background: var(--accent-dark); color: #fff; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .btn-play:active { opacity: 0.85; }
+  .btn-play.playing { background: #c0392b; }
+  .bpm-slider { width: 100%; -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px; background: var(--surface2); outline: none; cursor: pointer; margin-bottom: 8px; }
+  .bpm-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid var(--bg); }
+  .bpm-slider::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid var(--bg); }
+  .bpm-range-labels { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--faint); }
+  .beat-dots { display: flex; gap: 6px; margin-top: 14px; }
+  .beat-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--surface2); border: 1px solid var(--border2); transition: background 0.05s; flex-shrink: 0; }
+  .beat-dot.accent { border-color: var(--accent); }
+  .beat-dot.active { background: var(--accent); }
+  .beat-dot.active.accent { background: #fff; border-color: #fff; }
+
+  /* ── Chop player ── */
+  .chop-player { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .chop-player-row { display: flex; align-items: center; gap: 10px; }
+  .btn-chop { flex: 1; padding: 12px; border-radius: var(--r); border: none; font-family: var(--sans); font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--surface2); color: var(--muted); border: 1px solid var(--border2); transition: all 0.15s; }
+  .btn-chop.ready { background: rgba(110,231,183,0.12); color: var(--green); border-color: rgba(110,231,183,0.3); }
+  .btn-chop.playing-chop { background: rgba(110,231,183,0.2); color: #fff; border-color: var(--green); }
+  .btn-chop:active { opacity: 0.8; }
+  .chop-hint { font-size: 11px; color: var(--faint); margin-top: 8px; font-family: var(--mono); text-align: center; }
+
+  /* Chop playback progress */
+  .chop-progress { margin-top: 10px; display: none; }
+  .chop-progress-inner { display: flex; flex-wrap: wrap; gap: 3px; }
+  .chop-note { width: 18px; height: 18px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 9px; font-weight: 700; border: 1px solid var(--border2); color: var(--faint); background: var(--surface2); transition: background 0.05s, color 0.05s; }
+  .chop-note.R { border-color: rgba(167,139,250,0.3); color: #c4b5fd; background: rgba(167,139,250,0.08); }
+  .chop-note.L { border-color: rgba(110,231,183,0.3); color: #6ee7b7; background: rgba(110,231,183,0.06); }
+  .chop-note.active-R { background: rgba(167,139,250,0.5); color: #fff; border-color: #c4b5fd; }
+  .chop-note.active-L { background: rgba(110,231,183,0.5); color: #fff; border-color: #6ee7b7; }
+
+  /* ── Result ── */
+  #result-area { display: none; }
+  .fill-display { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+  .group-bubble { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 16px; font-weight: 700; }
+  .sep { color: var(--faint); font-size: 20px; margin: 0 2px; }
+  .fill-meta { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  .sticking-section { margin-top: 4px; }
+  .sticking-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .group-pill { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r); border: 1px solid var(--border); background: var(--surface2); cursor: pointer; margin-bottom: 8px; }
+  .pill-dot { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 14px; font-weight: 700; flex-shrink: 0; }
+  .pill-info { flex: 1; min-width: 0; }
+  .pill-name { font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .pill-sticks { display: flex; flex-wrap: wrap; gap: 1px; }
+  .pill-empty { font-size: 13px; color: var(--faint); }
+  .pill-arrow { color: var(--faint); font-size: 16px; flex-shrink: 0; }
+
+  .st { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 5px; font-family: var(--mono); font-size: 11px; font-weight: 700; }
+  .st-R { background: rgba(167,139,250,0.2); color: #c4b5fd; }
+  .st-L { background: rgba(110,231,183,0.15); color: #6ee7b7; }
+  .st-r { background: rgba(167,139,250,0.08); color: #8b7fd4; font-size: 10px; }
+  .st-l { background: rgba(110,231,183,0.06); color: #4aad86; font-size: 10px; }
+
+  #full-sticking { display: none; }
+  .sticking-chain { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-start; margin-bottom: 12px; }
+  .sticking-block { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .sticking-block-inner { display: flex; align-items: center; gap: 1px; padding: 5px 7px; border-radius: 8px; border: 1px solid var(--border); }
+  .block-label { font-family: var(--mono); font-size: 9px; color: var(--faint); text-align: center; max-width: 80px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .flat-notation { font-family: var(--mono); font-size: 14px; color: var(--muted); letter-spacing: 0.1em; word-break: break-all; line-height: 1.8; }
+  .flat-notation .fn-group { margin-right: 8px; }
+  .fn-R { color: #c4b5fd; } .fn-L { color: #6ee7b7; } .fn-r { color: #8b7fd4; } .fn-l { color: #4aad86; }
+
+  .progress-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  .prog-dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--border2); transition: background 0.2s, border-color 0.2s; }
+  .prog-dot.done { background: var(--green); border-color: var(--green); }
+
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50; display: flex; align-items: flex-end; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .modal-bg.open { opacity: 1; pointer-events: all; }
+  .modal { background: #1a1a20; border: 1px solid var(--border2); border-radius: 20px 20px 0 0; width: 100%; max-width: 560px; max-height: 85vh; overflow-y: auto; padding: 20px; transform: translateY(30px); transition: transform 0.22s cubic-bezier(0.32,0.72,0,1); }
+  .modal-bg.open .modal { transform: translateY(0); }
+  .modal-handle { width: 36px; height: 4px; background: var(--border2); border-radius: 2px; margin: 0 auto 18px; }
+  .modal-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6px; }
+  .modal-title { font-size: 17px; font-weight: 600; }
+  .modal-hint { font-size: 12px; color: var(--faint); margin-bottom: 14px; }
+  .btn-close { background: none; border: none; cursor: pointer; color: var(--faint); font-size: 22px; padding: 2px; line-height: 1; }
+  .modal-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .modal-tab { padding: 5px 14px; border-radius: 20px; border: 1px solid var(--border2); background: transparent; color: var(--muted); font-family: var(--mono); font-size: 13px; font-weight: 700; cursor: pointer; }
+  .modal-tab.on { font-weight: 700; }
+  .rud-card { border: 1.5px solid var(--border); border-radius: var(--r); padding: 12px 14px; margin-bottom: 8px; cursor: pointer; display: flex; align-items: center; gap: 12px; }
+  .rud-card.picked { border-color: var(--accent); background: var(--accent-bg); }
+  .rud-left { flex: 1; min-width: 0; }
+  .rud-name { font-size: 14px; font-weight: 500; margin-bottom: 3px; }
+  .rud-desc { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .rud-sticks { display: flex; flex-wrap: wrap; gap: 2px; }
+  .check { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--border2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: transparent; font-size: 13px; }
+  .rud-card.picked .check { background: var(--accent-dark); border-color: var(--accent-dark); color: white; }
+  .divider { height: 1px; background: var(--border); margin: 14px 0; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  @media (max-width: 400px) {
+    .chip { width: 40px; height: 40px; font-size: 14px; }
+    .group-bubble { width: 38px; height: 38px; font-size: 14px; }
+    .bpm-display { font-size: 28px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wordmark">Chop Builder</div>
+  <h1>Build your fills.</h1>
+  <p class="subtitle">Pick your groupings, generate a random combination, then assign stickings for each group.</p>
+</header>
+
+<main>
+
+  <div class="card">
+    <div class="section-label">Groups</div>
+    <div class="chips" id="group-chips"></div>
+  </div>
+
+  <div class="card">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div>
+        <div class="section-label">Note value</div>
+        <div class="seg-row" id="note-segs"></div>
+      </div>
+      <div>
+        <div class="section-label">Bars</div>
+        <div class="seg-row" id="bar-segs"></div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn-generate" onclick="generate()">Generate fill</button>
+
+  <!-- Result -->
+  <div id="result-area">
+    <div class="card">
+      <div class="section-label">Fill</div>
+      <div class="fill-display" id="fill-display"></div>
+      <div class="fill-meta" id="fill-meta"></div>
+    </div>
+
+    <!-- Metronome + Chop Player (inside result-area so it appears after fill) -->
+    <div class="card">
+      <div class="section-label">Metronome</div>
+      <div class="metro-top">
+        <div>
+          <div class="bpm-display" id="bpm-display">80</div>
+          <div class="bpm-label">BPM</div>
+        </div>
+        <div class="metro-controls">
+          <button class="btn-tap" onclick="tap()">TAP</button>
+          <button class="btn-play" id="play-btn" onclick="toggleMetronome()">▶</button>
+        </div>
+      </div>
+      <input type="range" class="bpm-slider" id="bpm-slider" min="40" max="240" value="80" oninput="setBpm(this.value)">
+      <div class="bpm-range-labels"><span>40</span><span>120</span><span>240</span></div>
+      <div class="beat-dots" id="beat-dots"></div>
+      <div class="chop-player">
+        <div class="section-label" style="margin-bottom:10px;">Chop playback</div>
+        <div class="chop-player-row">
+          <button class="btn-chop" id="chop-btn" onclick="toggleChop()">
+            <span id="chop-btn-icon">▶</span>
+            <span id="chop-btn-label">No fill generated yet</span>
+          </button>
+        </div>
+        <div class="chop-hint" id="chop-hint"></div>
+        <div class="chop-progress" id="chop-progress">
+          <div class="chop-progress-inner" id="chop-notes-display"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card sticking-section">
+      <div class="sticking-header">
+        <div class="section-label" style="margin-bottom:0;">Sticking</div>
+        <div class="progress-row" id="progress-row"></div>
+      </div>
+      <div id="group-pills"></div>
+      <div id="full-sticking">
+        <div class="divider"></div>
+        <div class="section-label">Full sticking</div>
+        <div class="sticking-chain" id="sticking-chain"></div>
+        <div class="flat-notation" id="flat-notation"></div>
+      </div>
+    </div>
+  </div>
+
+
+</main>
+
+<!-- Modal -->
+<div class="modal-bg" id="modal-bg" onclick="closeModalOnBg(event)">
+  <div class="modal" id="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div><div class="modal-title" id="modal-title">Choose sticking</div></div>
+      <button class="btn-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-hint">R = right hand &nbsp;·&nbsp; L = left hand &nbsp;·&nbsp; lowercase = ghost note</div>
+    <div class="modal-tabs" id="modal-tabs"></div>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────
+// Data
+// ─────────────────────────────────────────────────────────
+const RUDIMENTS = {
+  2:[
+    {name:'Double stroke',pattern:'RR',desc:'Foundation of doubles — even pressure both strokes.'},
+    {name:'Double stroke (L)',pattern:'LL',desc:'Lead with the left for left-hand development.'},
+  ],
+  3:[
+    {name:'Paradiddle frag',pattern:'RLL',desc:'Opens into paradiddle phrases naturally.'},
+    {name:'Single stroke 3',pattern:'RLR',desc:'Alternating lead — flows naturally across surfaces.'},
+    {name:'Single stroke 3 (L)',pattern:'LRL',desc:'Left-hand lead version.'},
+    {name:'Double + single',pattern:'RRL',desc:'Double on the right, single left.'},
+    {name:'Double + single (L)',pattern:'LLR',desc:'Double on the left, single right.'},
+    {name:'Paradiddle frag (L)',pattern:'LRR',desc:'Left-hand version.'},
+  ],
+  4:[
+    {name:'Paradiddle',pattern:'RLRR',desc:'The king of 4-note groupings. Accent the first note.'},
+    {name:'Paradiddle (L)',pattern:'LRLL',desc:'Left-lead paradiddle.'},
+    {name:'Double stroke',pattern:'RRLL',desc:'Doubles on each hand — great speed builder.'},
+    {name:'Single stroke 4',pattern:'RLRL',desc:'Pure alternating strokes.'},
+    {name:'Single stroke 4 (L)',pattern:'LRLR',desc:'Left-lead alternating.'},
+  ],
+  5:[
+    {name:'RLRLL',pattern:'RLRLL',desc:'Classic Gavin Harrison / odd-grouping staple.'},
+    {name:'Five stroke roll',pattern:'RRLLR',desc:'Two doubles + single. Accent the last note.'},
+    {name:'Five stroke roll (L)',pattern:'LLRRL',desc:'Left-lead version.'},
+    {name:'LRLRR',pattern:'LRLRR',desc:'Left-lead version of the above.'},
+    {name:'RLLRL',pattern:'RLLRL',desc:'Double on the left in the middle creates a nice lilt.'},
+    {name:'LRRLL',pattern:'LRRLL',desc:'Mirror version.'},
+  ],
+  6:[
+    {name:'Six stroke roll',pattern:'RLLRRL',desc:'Three sets of doubles — great for fast 6s.'},
+    {name:'Paradiddle-diddle',pattern:'RLRRLL',desc:'Extends the paradiddle with an extra double.'},
+    {name:'Paradiddle-diddle (L)',pattern:'LRLLRR',desc:'Left-lead version.'},
+    {name:'Single stroke 6',pattern:'RLRLRL',desc:'Pure alternating.'},
+    {name:'Double paradiddle',pattern:'RLRLRR',desc:'Two singles then a paradiddle ending.'},
+    {name:'Double paradiddle (L)',pattern:'LRLRLL',desc:'Left-lead double paradiddle.'},
+  ],
+  7:[
+    {name:'Seven stroke roll',pattern:'RRLLRRL',desc:'Three doubles + a single. Accent the last note.'},
+    {name:'Seven stroke roll (L)',pattern:'LLRRLLR',desc:'Left-lead version.'},
+    {name:'RLRLRLL',pattern:'RLRLRLL',desc:'Used by Thomas Lang and Mike Mangini.'},
+    {name:'LRLRLRR',pattern:'LRLRLRR',desc:'Left-lead version.'},
+    {name:'RLLRRLL',pattern:'RLLRRLL',desc:'Balanced doubles — symmetrical feel.'},
+  ],
+  8:[
+    {name:'Double paradiddle',pattern:'RLRLRRLL',desc:'Classic 8-note grouping.'},
+    {name:'Paradiddle x2',pattern:'RLRRLRLL',desc:'Two paradiddles chained together.'},
+    {name:'Single stroke 8',pattern:'RLRLRLRL',desc:'Pure alternating across 8.'},
+    {name:'RRLLRRLL',pattern:'RRLLRRLL',desc:'Double pairs — classic Bonham feel.'},
+  ],
+  9:[
+    {name:'Nine stroke roll',pattern:'RRLLRRLLR',desc:'Four doubles + a single. Resolves on the right.'},
+    {name:'Nine stroke roll (L)',pattern:'LLRRLLRRL',desc:'Resolves on the left.'},
+    {name:'RLRLRLLRL',pattern:'RLRLRLLRL',desc:'Polyrhythmic feel — 9 over 3 implied groupings.'},
+    {name:'Triple paradiddle frag',pattern:'RLRLRLRRL',desc:'Fragment of the triple paradiddle.'},
+  ],
+};
+
+const GROUP_COLORS = {
+  2:{bg:'rgba(96,165,250,0.18)',text:'#93c5fd',border:'rgba(96,165,250,0.35)'},
+  3:{bg:'rgba(110,231,183,0.15)',text:'#6ee7b7',border:'rgba(110,231,183,0.3)'},
+  4:{bg:'rgba(167,139,250,0.18)',text:'#c4b5fd',border:'rgba(167,139,250,0.35)'},
+  5:{bg:'rgba(251,191,36,0.15)',text:'#fcd34d',border:'rgba(251,191,36,0.3)'},
+  6:{bg:'rgba(251,146,60,0.15)',text:'#fdba74',border:'rgba(251,146,60,0.3)'},
+  7:{bg:'rgba(244,114,182,0.15)',text:'#f9a8d4',border:'rgba(244,114,182,0.3)'},
+  8:{bg:'rgba(52,211,153,0.15)',text:'#6ee7b7',border:'rgba(52,211,153,0.3)'},
+  9:{bg:'rgba(248,113,113,0.15)',text:'#fca5a5',border:'rgba(248,113,113,0.3)'},
+};
+
+const NOTE_VALUES = {'8th':8,'16th':16,'triplet':12,'32nd':32};
+const BAR_OPTS = [1,2,3,4];
+const ALL_GROUPS = [2,3,4,5,6,7,8,9];
+
+let activeGroups = new Set([3,4,5]);
+let activeNote = '16th';
+let activeBars = 1;
+let currentResult = null;
+let selectedStickings = {};
+
+// ─────────────────────────────────────────────────────────
+// Audio context
+// ─────────────────────────────────────────────────────────
+let audioCtx = null;
+function getCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// ─────────────────────────────────────────────────────────
+// Sound synthesis
+// Metronome click: short sine pop
+// Right hand: higher-pitched rimshot-style tap
+// Left hand:  lower-pitched, slightly softer tap
+// ─────────────────────────────────────────────────────────
+function playClick(time, isAccent) {
+  const ctx = getCtx();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.frequency.value = isAccent ? 1200 : 800;
+  osc.type = 'sine';
+  gain.gain.setValueAtTime(0, time);
+  gain.gain.linearRampToValueAtTime(isAccent ? 0.7 : 0.4, time + 0.002);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.04);
+  osc.start(time); osc.stop(time + 0.05);
+}
+
+function playStroke(time, hand) {
+  const ctx = getCtx();
+
+  if (hand === 'R') {
+    // RIGHT HAND — closed hi-hat: very short, bright, metallic click
+    // Filtered white noise with a very fast decay — tight and high
+    const bufSize = Math.floor(ctx.sampleRate * 0.04);
+    const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1;
+
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 7000;
+    hp.Q.value = 1.2;
+
+    const gain = ctx.createGain();
+    src.connect(hp); hp.connect(gain); gain.connect(ctx.destination);
+
+    gain.gain.setValueAtTime(0.9, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.035);
+
+    src.start(time); src.stop(time + 0.04);
+    return [src];
+
+  } else {
+    // LEFT HAND — floor tom: deep, boomy, low thud with pitch drop
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(140, time);
+    osc.frequency.exponentialRampToValueAtTime(55, time + 0.18);
+
+    // Small noise click for attack transient
+    const bufSize = Math.floor(ctx.sampleRate * 0.015);
+    const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1;
+    const click = ctx.createBufferSource();
+    click.buffer = buf;
+
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 800;
+
+    const oscGain = ctx.createGain();
+    const clickGain = ctx.createGain();
+
+    osc.connect(oscGain);     oscGain.connect(ctx.destination);
+    click.connect(lp); lp.connect(clickGain); clickGain.connect(ctx.destination);
+
+    oscGain.gain.setValueAtTime(0, time);
+    oscGain.gain.linearRampToValueAtTime(0.85, time + 0.004);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, time + 0.22);
+
+    clickGain.gain.setValueAtTime(0.5, time);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, time + 0.015);
+
+    osc.start(time); osc.stop(time + 0.25);
+    click.start(time); click.stop(time + 0.02);
+    return [osc, click];
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// Metronome
+// ─────────────────────────────────────────────────────────
+let isMetroPlaying = false;
+let bpm = 80;
+let currentBeat = 0;
+let beatsPerBar = 4;
+let nextNoteTime = 0;
+let schedulerTimer = null;
+let tapTimes = [];
+
+function scheduler() {
+  const ctx = getCtx();
+  const spb = 60.0 / bpm;
+  while (nextNoteTime < ctx.currentTime + 0.1) {
+    playClick(nextNoteTime, currentBeat === 0);
+    const beat = currentBeat;
+    const t = nextNoteTime;
+    setTimeout(() => updateBeatDots(beat), Math.max(0, (t - ctx.currentTime) * 1000));
+    nextNoteTime += spb;
+    currentBeat = (currentBeat + 1) % beatsPerBar;
+  }
+}
+
+function toggleMetronome() {
+  if (isMetroPlaying) stopMetro(); else startMetro();
+}
+
+function startMetro() {
+  const ctx = getCtx();
+  isMetroPlaying = true;
+  currentBeat = 0;
+  nextNoteTime = ctx.currentTime + 0.05;
+  schedulerTimer = setInterval(scheduler, 25);
+  document.getElementById('play-btn').textContent = '⏹';
+  document.getElementById('play-btn').classList.add('playing');
+}
+
+function stopMetro() {
+  isMetroPlaying = false;
+  clearInterval(schedulerTimer);
+  schedulerTimer = null;
+  document.getElementById('play-btn').textContent = '▶';
+  document.getElementById('play-btn').classList.remove('playing');
+  document.querySelectorAll('.beat-dot').forEach(d => d.classList.remove('active'));
+}
+
+function setBpm(val) {
+  bpm = parseInt(val);
+  document.getElementById('bpm-display').textContent = bpm;
+  document.getElementById('bpm-slider').value = bpm;
+}
+
+function tap() {
+  getCtx();
+  const now = Date.now();
+  tapTimes.push(now);
+  if (tapTimes.length > 8) tapTimes.shift();
+  if (tapTimes.length > 1 && (now - tapTimes[tapTimes.length - 2]) > 3000) {
+    tapTimes = [now]; return;
+  }
+  if (tapTimes.length > 1) {
+    const intervals = [];
+    for (let i = 1; i < tapTimes.length; i++) intervals.push(tapTimes[i] - tapTimes[i-1]);
+    const avg = intervals.reduce((a,b) => a+b,0) / intervals.length;
+    const newBpm = Math.round(60000 / avg);
+    setBpm(Math.min(240, Math.max(40, newBpm)));
+    if (isMetroPlaying) { stopMetro(); startMetro(); }
+  }
+}
+
+function updateBeatDots(beat) {
+  document.querySelectorAll('.beat-dot').forEach((d,i) => d.classList.toggle('active', i === beat));
+}
+
+function renderBeatDots() {
+  const c = document.getElementById('beat-dots');
+  c.innerHTML = '';
+  for (let i = 0; i < beatsPerBar; i++) {
+    const d = document.createElement('div');
+    d.className = 'beat-dot' + (i === 0 ? ' accent' : '');
+    c.appendChild(d);
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// Chop Player
+// ─────────────────────────────────────────────────────────
+let isChopPlaying = false;
+let chopTimeouts = [];
+let chopNoteEls = [];
+let chopAudioNodes = []; // track all scheduled nodes so we can stop them
+
+function getFullPattern() {
+  if (!currentResult) return null;
+  // Need stickings for all groups
+  const allSet = currentResult.every((_,i) => selectedStickings[i]);
+  if (!allSet) return null;
+  return currentResult.map((_,i) => selectedStickings[i].pattern).join('').split('');
+}
+
+function getFullPatternFallback() {
+  // No sticking? use simple alternating R L
+  if (!currentResult) return null;
+  const total = currentResult.reduce((a,b)=>a+b,0);
+  return Array.from({length:total}, (_,i) => i%2===0?'R':'L');
+}
+
+function updateChopBtn() {
+  const btn = document.getElementById('chop-btn');
+  const icon = document.getElementById('chop-btn-icon');
+  const label = document.getElementById('chop-btn-label');
+  const hint = document.getElementById('chop-hint');
+
+  if (!currentResult) {
+    btn.className = 'btn-chop';
+    icon.textContent = '▶';
+    label.textContent = 'No fill generated yet';
+    hint.textContent = '';
+    return;
+  }
+
+  const hasSticking = currentResult.every((_,i) => selectedStickings[i]);
+
+  if (isChopPlaying) {
+    btn.className = 'btn-chop playing-chop';
+    icon.textContent = '⏹';
+    label.textContent = 'Stop';
+    hint.textContent = '';
+  } else {
+    btn.className = 'btn-chop ready';
+    icon.textContent = '▶';
+    label.textContent = 'Play chop';
+    hint.textContent = hasSticking
+      ? 'Purple = right hand  ·  Green = left hand'
+      : 'Assign stickings above to hear R/L sounds';
+  }
+}
+
+function buildChopNotesDisplay(notes) {
+  const container = document.getElementById('chop-notes-display');
+  const prog = document.getElementById('chop-progress');
+  container.innerHTML = '';
+  chopNoteEls = [];
+  notes.forEach(n => {
+    const el = document.createElement('div');
+    const hand = n.toUpperCase();
+    el.className = 'chop-note ' + hand;
+    el.textContent = n.toUpperCase();
+    container.appendChild(el);
+    chopNoteEls.push({el, hand});
+  });
+  prog.style.display = 'block';
+}
+
+let chopGeneration = 0; // incremented on each stop to invalidate pending visuals
+
+function toggleChop() {
+  getCtx();
+  if (isChopPlaying) { stopChop(); return; }
+
+  const notes = getFullPattern() || getFullPatternFallback();
+  if (!notes) return;
+
+  isChopPlaying = true;
+  // Also start metronome if not already running
+  if (!isMetroPlaying) startMetro();
+  updateChopBtn();
+  buildChopNotesDisplay(notes);
+
+  const ctx = getCtx();
+  const noteInterval = (beatsPerBar / NOTE_VALUES[activeNote]) * (60 / bpm);
+  const startTime = ctx.currentTime + 0.05;
+  const gen = ++chopGeneration;
+
+  chopAudioNodes = [];
+
+  notes.forEach((n, i) => {
+    const t = startTime + i * noteInterval;
+    const hand = n.toUpperCase() === 'R' ? 'R' : 'L';
+    // playStroke now returns nodes so we can stop them
+    const nodes = playStroke(t, hand);
+    chopAudioNodes.push(...nodes);
+    // Schedule visual highlight — bail if generation changed (i.e. stopped)
+    const delay = Math.max(0, (t - ctx.currentTime) * 1000);
+    const to = setTimeout(() => {
+      if (chopGeneration !== gen) return;
+      chopNoteEls.forEach(({el}) => el.classList.remove('active-R', 'active-L'));
+      if (chopNoteEls[i]) chopNoteEls[i].el.classList.add('active-' + hand);
+    }, delay);
+    chopTimeouts.push(to);
+  });
+
+  // Auto-stop after all notes play
+  const totalDuration = notes.length * noteInterval * 1000 + 200;
+  const endTo = setTimeout(() => {
+    if (chopGeneration !== gen) return;
+    stopChop();
+  }, totalDuration);
+  chopTimeouts.push(endTo);
+}
+
+function stopChop() {
+  isChopPlaying = false;
+  chopGeneration++; // invalidate all pending visual callbacks
+  chopTimeouts.forEach(t => clearTimeout(t));
+  chopTimeouts = [];
+  // Stop all scheduled audio nodes immediately
+  const now = getCtx().currentTime;
+  chopAudioNodes.forEach(node => {
+    try { node.stop(now); } catch(e) {}
+  });
+  chopAudioNodes = [];
+  chopNoteEls.forEach(({el}) => el.classList.remove('active-R', 'active-L'));
+  updateChopBtn();
+}
+
+// ─────────────────────────────────────────────────────────
+// Fill generator
+// ─────────────────────────────────────────────────────────
+function stickEl(c) {
+  const cls = c==='R'?'st-R':c==='L'?'st-L':c==='r'?'st-r':'st-l';
+  const s = document.createElement('span');
+  s.className = `st ${cls}`; s.textContent = c; return s;
+}
+function stickHtml(pattern) {
+  return pattern.split('').map(c => {
+    const cls = c==='R'?'st-R':c==='L'?'st-L':c==='r'?'st-r':'st-l';
+    return `<span class="st ${cls}">${c}</span>`;
+  }).join('');
+}
+
+function renderChips() {
+  const c = document.getElementById('group-chips'); c.innerHTML = '';
+  ALL_GROUPS.forEach(g => {
+    const el = document.createElement('button');
+    el.className = 'chip' + (activeGroups.has(g) ? ' on' : '');
+    el.textContent = g;
+    el.onclick = () => {
+      if (activeGroups.has(g)) { if (activeGroups.size > 1) activeGroups.delete(g); }
+      else activeGroups.add(g);
+      renderChips();
+    };
+    c.appendChild(el);
+  });
+}
+
+function renderSegs(id, opts, active, setFn) {
+  const c = document.getElementById(id); c.innerHTML = '';
+  opts.forEach(o => {
+    const el = document.createElement('button');
+    el.className = 'seg' + (o===active?' on':'');
+    el.textContent = typeof o==='number' ? (o===1?'1 bar':o+' bars') : o;
+    el.onclick = () => { setFn(o); renderSegs(id,opts,o,setFn); };
+    c.appendChild(el);
+  });
+}
+
+function initControls() {
+  renderChips();
+  renderSegs('note-segs', Object.keys(NOTE_VALUES), activeNote, v => activeNote=v);
+  renderSegs('bar-segs', BAR_OPTS, activeBars, v => activeBars=v);
+  renderBeatDots();
+  updateChopBtn();
+}
+
+function findCombination(target, available, maxAttempts=300) {
+  for (let a=0; a<maxAttempts; a++) {
+    const combo=[]; let rem=target, tries=0;
+    while (rem>0 && tries<300) {
+      tries++;
+      const cands = available.filter(g => g<=rem);
+      if (!cands.length) break;
+      if (rem <= Math.min(...available)*2) {
+        if (cands.includes(rem)) { combo.push(rem); rem=0; break; }
+        const ts = cands.find(g => cands.includes(rem-g));
+        if (ts) { combo.push(ts); rem-=ts; continue; }
+      }
+      const pick = cands[Math.floor(Math.random()*cands.length)];
+      combo.push(pick); rem-=pick;
+    }
+    if (rem===0) return combo;
+  }
+  return null;
+}
+
+function generate() {
+  stopChop();
+  const target = NOTE_VALUES[activeNote] * activeBars;
+  const result = findCombination(target, [...activeGroups]);
+  currentResult = result;
+  selectedStickings = {};
+
+  // Auto-apply the first rudiment (default) for each group
+  // This runs after findCombination so result is known below
+  const area = document.getElementById('result-area');
+  if (!result) {
+    area.style.display = 'block';
+    document.getElementById('fill-display').innerHTML = '<span style="color:var(--muted);font-size:14px;">Couldn\'t find a combination — try enabling more groups.</span>';
+    document.getElementById('fill-meta').innerHTML = '';
+    document.getElementById('group-pills').innerHTML = '';
+    document.getElementById('full-sticking').style.display = 'none';
+    document.getElementById('chop-progress').style.display = 'none';
+    updateChopBtn();
+    return;
+  }
+
+  area.style.display = 'block';
+  const total = result.reduce((a,b)=>a+b,0);
+  document.getElementById('fill-meta').innerHTML =
+    `<span>${result.length} groups</span><span style="color:var(--faint)">·</span><span>${total} hits</span>`;
+  document.getElementById('full-sticking').style.display = 'none';
+  document.getElementById('chop-progress').style.display = 'none';
+
+  // Auto-select default (first) rudiment for each unique group
+  const seen = new Set();
+  result.forEach((g, i) => {
+    if (seen.has(g)) return;
+    seen.add(g);
+    const ruds = RUDIMENTS[g];
+    if (ruds && ruds.length > 0) {
+      result.forEach((cg, ci) => {
+        if (cg === g) selectedStickings[ci] = {...ruds[0], group: g};
+      });
+    }
+  });
+
+  renderFillDisplay();
+  renderGroupPills();
+  updateChopBtn();
+}
+
+function renderFillDisplay() {
+  if (!currentResult) return;
+  const fd = document.getElementById('fill-display');
+  fd.innerHTML = '';
+  currentResult.forEach((n, i) => {
+    if (i > 0) {
+      const sep = document.createElement('span');
+      sep.className = 'sep';
+      sep.textContent = '+';
+      fd.appendChild(sep);
+    }
+    const gc = GROUP_COLORS[n];
+    const sel = selectedStickings[i];
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'group-bubble';
+    bubble.style.cssText = `background:${gc.bg};color:${gc.text};border:1.5px solid ${gc.border};flex-shrink:0;`;
+    bubble.textContent = n;
+
+    wrapper.appendChild(bubble);
+
+    if (sel) {
+      const label = document.createElement('div');
+      label.style.cssText = `font-family:var(--mono);font-size:10px;color:${gc.text};opacity:0.85;letter-spacing:0.04em;text-align:center;`;
+      label.textContent = sel.pattern;
+      wrapper.appendChild(label);
+    }
+
+    fd.appendChild(wrapper);
+  });
+}
+
+function renderGroupPills() {
+  const container = document.getElementById('group-pills'); container.innerHTML = '';
+  const seen = new Set();
+  currentResult.forEach((g,i) => {
+    if (seen.has(g)) return; seen.add(g);
+    const gc = GROUP_COLORS[g];
+    const sel = selectedStickings[i];
+    const count = currentResult.filter(x=>x===g).length;
+    const countTag = count>1 ? `<span style="font-size:11px;color:var(--faint);margin-left:4px;">×${count}</span>` : '';
+    const pill = document.createElement('div');
+    pill.className = 'group-pill';
+    const dot = `<div class="pill-dot" style="background:${gc.bg};color:${gc.text};border:1.5px solid ${gc.border};">${g}</div>`;
+    const info = sel
+      ? `<div class="pill-info"><div class="pill-name">${sel.name}${countTag}</div><div class="pill-sticks">${stickHtml(sel.pattern)}</div></div>`
+      : `<div class="pill-info"><div class="pill-empty">Tap to choose sticking${countTag}</div></div>`;
+    pill.innerHTML = dot + info + '<div class="pill-arrow">›</div>';
+    pill.onclick = () => openModal(i);
+    container.appendChild(pill);
+  });
+  renderProgress();
+  checkAllPicked();
+}
+
+function renderProgress() {
+  const row = document.getElementById('progress-row');
+  if (!currentResult) { row.innerHTML=''; return; }
+  const unique = [...new Set(currentResult)].sort((a,b)=>a-b);
+  const dots = unique.map(g => {
+    const idx = currentResult.indexOf(g);
+    return `<div class="prog-dot${selectedStickings[idx]?' done':''}"></div>`;
+  }).join('');
+  const picked = unique.filter(g=>selectedStickings[currentResult.indexOf(g)]).length;
+  row.innerHTML = dots + `<span style="font-size:12px;">${picked}/${unique.length}</span>`;
+}
+
+function checkAllPicked() {
+  if (!currentResult) return;
+  const unique = [...new Set(currentResult)];
+  const allDone = unique.every(g=>selectedStickings[currentResult.indexOf(g)]);
+  if (allDone) {
+    document.getElementById('full-sticking').style.display = 'block';
+    renderFullSticking();
+  }
+  updateChopBtn();
+}
+
+function renderFullSticking() {
+  const chain = document.getElementById('sticking-chain');
+  const flat = document.getElementById('flat-notation');
+  chain.innerHTML = ''; flat.innerHTML = '';
+  currentResult.forEach((g,i) => {
+    const sel = selectedStickings[i]; if (!sel) return;
+    const gc = GROUP_COLORS[g];
+    const block = document.createElement('div'); block.className='sticking-block';
+    const inner = document.createElement('div'); inner.className='sticking-block-inner'; inner.style.borderColor=gc.border;
+    sel.pattern.split('').forEach(c => inner.appendChild(stickEl(c)));
+    const label = document.createElement('div'); label.className='block-label'; label.style.color=gc.text; label.textContent=sel.name;
+    block.appendChild(inner); block.appendChild(label); chain.appendChild(block);
+  });
+  flat.innerHTML = currentResult.map((_,i) => {
+    const sel=selectedStickings[i]; if(!sel) return '';
+    return `<span class="fn-group">${sel.pattern.split('').map(c=>`<span class="fn-${c}">${c}</span>`).join('')}</span>`;
+  }).join('');
+}
+
+function openModal(idx) {
+  const g = currentResult[idx];
+  document.getElementById('modal-title').textContent = `Group of ${g} — sticking`;
+  const unique = [...new Set(currentResult)].sort((a,b)=>a-b);
+  document.getElementById('modal-tabs').innerHTML = unique.map(ug => {
+    const gc=GROUP_COLORS[ug]; const isOn=ug===g;
+    return `<button class="modal-tab${isOn?' on':''}" style="${isOn?`background:${gc.bg};color:${gc.text};border-color:${gc.border};`:'color:var(--muted);'}" onclick="switchModalTab(${ug})">${ug}</button>`;
+  }).join('');
+  renderModalContent(g);
+  document.getElementById('modal-bg').classList.add('open');
+}
+
+function switchModalTab(g) {
+  const unique=[...new Set(currentResult)].sort((a,b)=>a-b);
+  document.getElementById('modal-tabs').innerHTML = unique.map(ug => {
+    const gc=GROUP_COLORS[ug]; const isOn=ug===g;
+    return `<button class="modal-tab${isOn?' on':''}" style="${isOn?`background:${gc.bg};color:${gc.text};border-color:${gc.border};`:'color:var(--muted);'}" onclick="switchModalTab(${ug})">${ug}</button>`;
+  }).join('');
+  renderModalContent(g);
+}
+
+function renderModalContent(g) {
+  const firstIdx=currentResult.indexOf(g);
+  const curSel=selectedStickings[firstIdx];
+  const ruds=RUDIMENTS[g]||[];
+  document.getElementById('modal-content').innerHTML = ruds.map(r => {
+    const isPicked=curSel&&curSel.pattern===r.pattern;
+    return `<div class="rud-card${isPicked?' picked':''}" onclick='selectRudiment(${JSON.stringify(r)},${g})'>
+      <div class="rud-left">
+        <div class="rud-name">${r.name}</div>
+        <div class="rud-desc">${r.desc}</div>
+        <div class="rud-sticks">${stickHtml(r.pattern)}</div>
+      </div>
+      <div class="check">${isPicked?'✓':''}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectRudiment(r,g) {
+  currentResult.forEach((cg,i) => { if(cg===g) selectedStickings[i]={...r,group:g}; });
+  renderModalContent(g);
+  renderFillDisplay();
+  renderGroupPills();
+}
+
+function closeModal() { document.getElementById('modal-bg').classList.remove('open'); }
+function closeModalOnBg(e) { if(e.target===document.getElementById('modal-bg')) closeModal(); }
+
+initControls();
+</script>
+</body>
+</html>
