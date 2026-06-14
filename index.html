@@ -64,6 +64,14 @@
   .lock-btn.locked { background:var(--accent-dark) !important; border-color:var(--accent-dark) !important; color:#fff !important; }
   .fill-group-wrap { position:relative; display:flex; flex-direction:column; align-items:center; gap:4px; cursor:pointer; }
 
+
+  /* ── Kick toggle ── */
+  .kick-toggle-btn { background:none; border:none; cursor:pointer; padding:4px; }
+  .kick-toggle-track { width:44px; height:26px; border-radius:13px; background:var(--surface2); border:1.5px solid var(--border2); position:relative; transition:background 0.2s, border-color 0.2s; }
+  .kick-toggle-track.on { background:rgba(251,146,60,0.3); border-color:#fb923c; }
+  .kick-toggle-thumb { position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:var(--faint); transition:transform 0.2s, background 0.2s; }
+  .kick-toggle-track.on .kick-toggle-thumb { transform:translateX(18px); background:#fb923c; }
+
   /* ── Metronome ── */
   .metro-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
   .bpm-display { font-family: var(--mono); font-size: 36px; font-weight: 700; line-height: 1; }
@@ -98,8 +106,10 @@
   .chop-note { width: 18px; height: 18px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 9px; font-weight: 700; border: 1px solid var(--border2); color: var(--faint); background: var(--surface2); transition: background 0.05s, color 0.05s; }
   .chop-note.R { border-color: rgba(167,139,250,0.3); color: #c4b5fd; background: rgba(167,139,250,0.08); }
   .chop-note.L { border-color: rgba(110,231,183,0.3); color: #6ee7b7; background: rgba(110,231,183,0.06); }
+  .chop-note.K { border-color: rgba(251,146,60,0.3); color: #fb923c; background: rgba(251,146,60,0.08); }
   .chop-note.active-R { background: rgba(167,139,250,0.5); color: #fff; border-color: #c4b5fd; }
   .chop-note.active-L { background: rgba(110,231,183,0.5); color: #fff; border-color: #6ee7b7; }
+  .chop-note.active-K { background: rgba(251,146,60,0.5); color: #fff; border-color: #fb923c; }
 
   /* ── Result ── */
   #result-area { display: none; }
@@ -137,7 +147,7 @@
   </div>
 
   <div class="card">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px;">
       <div>
         <div class="section-label">Note value</div>
         <div class="seg-row" id="note-segs"></div>
@@ -146,6 +156,17 @@
         <div class="section-label">Bars</div>
         <div class="seg-row" id="bar-segs"></div>
       </div>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:12px;display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div class="section-label" style="margin-bottom:2px;">Include kick</div>
+        <div style="font-size:12px;color:var(--faint);">Auto-select rudiments with K</div>
+      </div>
+      <button id="kick-toggle" onclick="toggleKick()" class="kick-toggle-btn">
+        <div class="kick-toggle-track" id="kick-toggle-track">
+          <div class="kick-toggle-thumb" id="kick-toggle-thumb"></div>
+        </div>
+      </button>
     </div>
   </div>
 
@@ -209,6 +230,9 @@ const RUDIMENTS = {
     {name:'Double + single',pattern:'RRL',desc:'Double on the right, single left.'},
     {name:'Double + single (L)',pattern:'LLR',desc:'Double on the left, single right.'},
     {name:'Paradiddle frag (L)',pattern:'LRR',desc:'Left-hand version.'},
+    {name:'RLK',pattern:'RLK',desc:'Kick on the third — natural and groovy.'},
+    {name:'LRK',pattern:'LRK',desc:'Left-lead version.'},
+    {name:'RKL',pattern:'RKL',desc:'Kick in the middle.'},
   ],
   4:[
     {name:'Paradiddle',pattern:'RLRR',desc:'The king of 4-note groupings. Accent the first note.'},
@@ -216,6 +240,10 @@ const RUDIMENTS = {
     {name:'Double stroke',pattern:'RRLL',desc:'Doubles on each hand — great speed builder.'},
     {name:'Single stroke 4',pattern:'RLRL',desc:'Pure alternating strokes.'},
     {name:'Single stroke 4 (L)',pattern:'LRLR',desc:'Left-lead alternating.'},
+    {name:'RLLK',pattern:'RLLK',desc:'Kick on the fourth — strong landing.'},
+    {name:'LRRK',pattern:'LRRK',desc:'Left-lead version.'},
+    {name:'RLKL',pattern:'RLKL',desc:'Kick on the third.'},
+    {name:'RLKR',pattern:'RLKR',desc:'Kick third, resolve right.'},
   ],
   5:[
     {name:'RLRLL',pattern:'RLRLL',desc:'Classic Gavin Harrison / odd-grouping staple.'},
@@ -224,6 +252,9 @@ const RUDIMENTS = {
     {name:'LRLRR',pattern:'LRLRR',desc:'Left-lead version of the above.'},
     {name:'RLLRL',pattern:'RLLRL',desc:'Double on the left in the middle creates a nice lilt.'},
     {name:'LRRLL',pattern:'LRRLL',desc:'Mirror version.'},
+    {name:'RLLKR',pattern:'RLLKR',desc:'Kick on 4 — very musical over a groove.'},
+    {name:'RLKLL',pattern:'RLKLL',desc:'Kick on 3, double left landing.'},
+    {name:'RLRLK',pattern:'RLRLK',desc:'Kick on the last note — punchy finish.'},
   ],
   6:[
     {name:'Six stroke roll',pattern:'RLLRRL',desc:'Three sets of doubles — great for fast 6s.'},
@@ -232,6 +263,9 @@ const RUDIMENTS = {
     {name:'Single stroke 6',pattern:'RLRLRL',desc:'Pure alternating.'},
     {name:'Double paradiddle',pattern:'RLRLRR',desc:'Two singles then a paradiddle ending.'},
     {name:'Double paradiddle (L)',pattern:'LRLRLL',desc:'Left-lead double paradiddle.'},
+    {name:'RLLKRL',pattern:'RLLKRL',desc:'Kick on 4 in a six — creates a nice lilt.'},
+    {name:'RLRLKL',pattern:'RLRLKL',desc:'Kick on 5 — syncopated feel.'},
+    {name:'RLLRRK',pattern:'RLLRRK',desc:'Kick to close the phrase.'},
   ],
   7:[
     {name:'Seven stroke roll',pattern:'RRLLRRL',desc:'Three doubles + a single. Accent the last note.'},
@@ -239,19 +273,11 @@ const RUDIMENTS = {
     {name:'RLRLRLL',pattern:'RLRLRLL',desc:'Used by Thomas Lang and Mike Mangini.'},
     {name:'LRLRLRR',pattern:'LRLRLRR',desc:'Left-lead version.'},
     {name:'RLLRRLL',pattern:'RLLRRLL',desc:'Balanced doubles — symmetrical feel.'},
+    {name:'RLLKRLL',pattern:'RLLKRLL',desc:'Kick on 4 — very Virgil Donati.'},
+    {name:'RLRLKLR',pattern:'RLRLKLR',desc:'Kick on 5 in the seven.'},
+    {name:'RLRLLKR',pattern:'RLRLLKR',desc:'Kick near the end for a strong landing.'},
   ],
-  8:[
-    {name:'Double paradiddle',pattern:'RLRLRRLL',desc:'Classic 8-note grouping.'},
-    {name:'Paradiddle x2',pattern:'RLRRLRLL',desc:'Two paradiddles chained together.'},
-    {name:'Single stroke 8',pattern:'RLRLRLRL',desc:'Pure alternating across 8.'},
-    {name:'RRLLRRLL',pattern:'RRLLRRLL',desc:'Double pairs — classic Bonham feel.'},
-  ],
-  9:[
-    {name:'Nine stroke roll',pattern:'RRLLRRLLR',desc:'Four doubles + a single. Resolves on the right.'},
-    {name:'Nine stroke roll (L)',pattern:'LLRRLLRRL',desc:'Resolves on the left.'},
-    {name:'RLRLRLLRL',pattern:'RLRLRLLRL',desc:'Polyrhythmic feel — 9 over 3 implied groupings.'},
-    {name:'Triple paradiddle frag',pattern:'RLRLRLRRL',desc:'Fragment of the triple paradiddle.'},
-  ],
+
 };
 
 const GROUP_COLORS = {
@@ -261,15 +287,14 @@ const GROUP_COLORS = {
   5:{bg:'rgba(251,191,36,0.15)',text:'#fcd34d',border:'rgba(251,191,36,0.3)'},
   6:{bg:'rgba(251,146,60,0.15)',text:'#fdba74',border:'rgba(251,146,60,0.3)'},
   7:{bg:'rgba(244,114,182,0.15)',text:'#f9a8d4',border:'rgba(244,114,182,0.3)'},
-  8:{bg:'rgba(52,211,153,0.15)',text:'#6ee7b7',border:'rgba(52,211,153,0.3)'},
-  9:{bg:'rgba(248,113,113,0.15)',text:'#fca5a5',border:'rgba(248,113,113,0.3)'},
 };
 
 const NOTE_VALUES = {'8th':8,'16th':16,'triplet':12,'32nd':32};
 const BAR_OPTS = [1,2,3,4];
-const ALL_GROUPS = [2,3,4,5,6,7,8,9];
+const ALL_GROUPS = [2,3,4,5,6,7];
 
 let activeGroups = new Set([3,4,5]);
+let includeKick = false;
 let activeNote = '16th';
 let activeBars = 1;
 let currentResult = null;
@@ -351,9 +376,8 @@ async function playStroke(time, hand) {
     src.start(time); src.stop(time + 0.04);
     return [src];
 
-  } else {
+  } else if (hand === 'L') {
     // ── LEFT — open hi-hat ────────────────────────────────────
-    // Lower bandpass (4–8 kHz), softer attack, long washy tail ~350 ms
     const src = makeNoise(0.4);
 
     const hp = ctx.createBiquadFilter();
@@ -366,7 +390,6 @@ async function playStroke(time, hand) {
     lp.frequency.value = 7000;
     lp.Q.value = 0.6;
 
-    // Slight resonant peak around 4kHz for the "open" metallic shimmer
     const peak = ctx.createBiquadFilter();
     peak.type = 'peaking';
     peak.frequency.value = 4000;
@@ -376,13 +399,48 @@ async function playStroke(time, hand) {
     const gain = ctx.createGain();
     src.connect(hp); hp.connect(lp); lp.connect(peak); peak.connect(gain); gain.connect(ctx.destination);
 
-    // Softer attack than the closed, long exponential decay
     gain.gain.setValueAtTime(0, time);
-    gain.gain.linearRampToValueAtTime(0.38, time + 0.006); // slightly slower attack
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.32); // long open decay
+    gain.gain.linearRampToValueAtTime(0.38, time + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.32);
 
     src.start(time); src.stop(time + 0.4);
     return [src];
+
+  } else {
+    // ── KICK — deep sine thud with pitch drop ──────────────────
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, time);
+    osc.frequency.exponentialRampToValueAtTime(40, time + 0.15);
+
+    // Click transient for attack punch
+    const clickSize = Math.floor(ctx.sampleRate * 0.008);
+    const clickBuf = ctx.createBuffer(1, clickSize, ctx.sampleRate);
+    const cd = clickBuf.getChannelData(0);
+    for (let i = 0; i < clickSize; i++) cd[i] = Math.random() * 2 - 1;
+    const click = ctx.createBufferSource();
+    click.buffer = clickBuf;
+
+    const clickFilt = ctx.createBiquadFilter();
+    clickFilt.type = 'lowpass';
+    clickFilt.frequency.value = 200;
+
+    const oscGain = ctx.createGain();
+    const clickGain = ctx.createGain();
+
+    osc.connect(oscGain); oscGain.connect(ctx.destination);
+    click.connect(clickFilt); clickFilt.connect(clickGain); clickGain.connect(ctx.destination);
+
+    oscGain.gain.setValueAtTime(0, time);
+    oscGain.gain.linearRampToValueAtTime(0.9, time + 0.004);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, time + 0.25);
+
+    clickGain.gain.setValueAtTime(0.4, time);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, time + 0.012);
+
+    osc.start(time); osc.stop(time + 0.28);
+    click.start(time); click.stop(time + 0.012);
+    return [osc, click];
   }
 }
 
@@ -528,7 +586,7 @@ function buildChopNotesDisplay(notes) {
   notes.forEach(n => {
     const el = document.createElement('div');
     const hand = n.toUpperCase();
-    el.className = 'chop-note ' + hand;
+    el.className = 'chop-note ' + hand.toUpperCase();
     el.textContent = n.toUpperCase();
     container.appendChild(el);
     chopNoteEls.push({el, hand});
@@ -561,7 +619,7 @@ async function toggleChop() {
   for (let i = 0; i < notes.length; i++) {
     const n = notes[i];
     const t = startTime + i * noteInterval;
-    const hand = n.toUpperCase() === 'R' ? 'R' : 'L';
+    const hand = n.toUpperCase() === 'K' ? 'K' : n.toUpperCase() === 'R' ? 'R' : 'L';
     // await each playStroke so nodes are collected before any could fire
     const nodes = await playStroke(t, hand);
     if (nodes) chopAudioNodes.push(...nodes);
@@ -570,7 +628,7 @@ async function toggleChop() {
     const to = setTimeout(() => {
       if (chopGeneration !== gen) return;
       chopNoteEls.forEach(({el}) => el.classList.remove('active-R', 'active-L'));
-      if (chopNoteEls[i]) chopNoteEls[i].el.classList.add('active-' + hand);
+      if (chopNoteEls[i]) chopNoteEls[i].el.classList.add('active-' + hand.toUpperCase());
     }, delay);
     chopTimeouts.push(to);
   }
@@ -629,6 +687,13 @@ function renderSegs(id, opts, active, setFn) {
   });
 }
 
+function toggleKick() {
+  includeKick = !includeKick;
+  const track = document.getElementById('kick-toggle-track');
+  if (includeKick) track.classList.add('on');
+  else track.classList.remove('on');
+}
+
 function initControls() {
   renderChips();
   renderSegs('note-segs', Object.keys(NOTE_VALUES), activeNote, v => activeNote=v);
@@ -685,9 +750,24 @@ function generate() {
 
   // Auto-select defaults left-to-right, avoiding 3-in-a-row at boundaries
   result.forEach((g, i) => {
-    const ruds = RUDIMENTS[g];
-    if (!ruds || ruds.length === 0) return;
-    const chosen = pickNonClashing(g, i, selectedStickings, ruds);
+    const allRuds = RUDIMENTS[g];
+    if (!allRuds || allRuds.length === 0) return;
+
+    let pool;
+    if (!includeKick) {
+      // Kick off: only hand rudiments
+      pool = allRuds.filter(r => !r.pattern.includes('K'));
+      if (!pool.length) pool = allRuds;
+    } else {
+      // Kick on: ~60% chance of picking a kick rudiment for this slot.
+      // Build a weighted list: kick rudiments appear 3x more often.
+      const kickRuds = allRuds.filter(r => r.pattern.includes('K'));
+      const handRuds = allRuds.filter(r => !r.pattern.includes('K'));
+      const useKick = Math.random() < 0.6 && kickRuds.length > 0;
+      pool = useKick ? kickRuds : (handRuds.length > 0 ? handRuds : allRuds);
+    }
+
+    const chosen = pickNonClashing(g, i, selectedStickings, pool);
     selectedStickings[i] = {...chosen, group: g};
   });
 
@@ -702,10 +782,14 @@ function generate() {
 // Get the last N chars of a pattern (the trailing hand run)
 function trailingRun(pattern) {
   if (!pattern) return '';
+  // K is neutral — stop the run at any K
   const last = pattern[pattern.length - 1].toUpperCase();
+  if (last === 'K') return ''; // K breaks any run
   let run = '';
   for (let i = pattern.length - 1; i >= 0; i--) {
-    if (pattern[i].toUpperCase() === last) run = pattern[i] + run;
+    const c = pattern[i].toUpperCase();
+    if (c === 'K') break; // K resets the run
+    if (c === last) run = pattern[i] + run;
     else break;
   }
   return run;
@@ -715,9 +799,12 @@ function trailingRun(pattern) {
 function leadingRun(pattern) {
   if (!pattern) return '';
   const first = pattern[0].toUpperCase();
+  if (first === 'K') return ''; // K breaks any run
   let run = '';
   for (let i = 0; i < pattern.length; i++) {
-    if (pattern[i].toUpperCase() === first) run += pattern[i];
+    const c = pattern[i].toUpperCase();
+    if (c === 'K') break;
+    if (c === first) run += pattern[i];
     else break;
   }
   return run;
@@ -728,6 +815,8 @@ function causesTriplet(prevPattern, nextPattern) {
   if (!prevPattern || !nextPattern) return false;
   const trail = trailingRun(prevPattern);
   const lead = leadingRun(nextPattern);
+  // Empty run means K broke it — no clash possible
+  if (!trail || !lead) return false;
   if (trail[0].toUpperCase() !== lead[0].toUpperCase()) return false;
   return (trail.length + lead.length) >= 3;
 }
@@ -735,7 +824,7 @@ function causesTriplet(prevPattern, nextPattern) {
 // Mirror a pattern (swap R<->L, r<->l)
 function mirrorPattern(pattern) {
   return pattern.split('').map(c => (
-    c==='R'?'L':c==='L'?'R':c==='r'?'l':c==='l'?'r':c
+    c==='R'?'L':c==='L'?'R':c==='r'?'l':c==='l'?'r':c==='K'?'K':c
   )).join('');
 }
 
@@ -880,7 +969,7 @@ function renderFillDisplay() {
       const prevSel = i > 0 ? selectedStickings[i-1] : null;
       const clash = prevSel && causesTriplet(prevSel.pattern, sel.pattern);
       const label = document.createElement('div');
-      label.style.cssText = `font-family:var(--mono);font-size:10px;color:${clash ? '#fca5a5' : gc.text};opacity:${clash ? 1 : 0.85};letter-spacing:0.04em;text-align:center;`;
+      label.style.cssText = `font-family:var(--mono);font-size:13px;font-weight:500;color:${clash ? '#fca5a5' : gc.text};opacity:${clash ? 1 : 0.85};letter-spacing:0.05em;text-align:center;`;
       label.textContent = sel.pattern;
       wrapper.appendChild(label);
     }
